@@ -34,3 +34,10 @@ async def channel_change(name: str = Body(..., embed=True)):
             else:
                 raise HTTPException(status_code=500, detail="failed to switch channel")
     raise HTTPException(status_code=404, detail="channel not found")
+
+@app.post("/channels/stop")
+async def channel_stop():
+    ok = await mpv.stop_playback()
+    if ok:
+        return {"message": "playback stopped"}
+    raise HTTPException(status_code=500, detail="failed to stop playback")

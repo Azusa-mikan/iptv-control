@@ -136,6 +136,41 @@ class MPVController(threading.Thread):
     async def load(self, url: str) -> bool:
         return await asyncio.to_thread(self._load_sync, url)
 
+    async def stop_playback(self) -> bool:
+        if not self.running.is_set():
+            return True
+        return await asyncio.to_thread(self._stop_playback_sync)
+
+    def _stop_playback_sync(self, timeout: float = 5.0) -> bool:
+        deadline = time.monotonic() + timeout
+        request_id = self._next_request_id()
+        read_buffer = bytearray()
+
+        conn = self._connect_ipc_stream(deadline)
+        if conn is None:
+            return False
+
+        try:
+            payload = {
+                "command": ["stop"],
+                "request_id": request_id,
+            }
+            self._send_ipc_message(conn, payload)
+
+            while time.monotonic() < deadline:
+                msg = self._read_ipc_message(conn, read_buffer)
+                if msg is None:
+                    return False
+
+                if msg.get("request_id") == request_id:
+                    return msg.get("error") == "success"
+
+            return False
+        except OSError:
+            return False
+        finally:
+            conn.close()
+
     def _load_sync(self, url: str, timeout: float = 10.0) -> bool:
         if not self.running.is_set():
             return False

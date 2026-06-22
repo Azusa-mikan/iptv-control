@@ -22,6 +22,14 @@ def switch_channel(name: str) -> str:
     return content["message"]
 
 
+def stop_playback() -> str:
+    response = httpx.post(f"{API_URL}/channels/stop")
+    content = response.json()
+    if response.is_error:
+        raise RuntimeError(content.get("detail", "unknown error"))
+    return content["message"]
+
+
 def main():
     while True:
         channels = get_channels()
@@ -29,14 +37,17 @@ def main():
             questionary.print("no channels available")
             break
 
-        choices = [c["name"] for c in channels]
+        choices = [*[c["name"] for c in channels], "stop playback"]
         selected = questionary.select("select a channel:", choices=choices).ask()
 
         if selected is None:
             break
 
         try:
-            message = switch_channel(selected)
+            if selected == "stop playback":
+                message = stop_playback()
+            else:
+                message = switch_channel(selected)
             questionary.print(message)
         except RuntimeError as e:
             questionary.print(f"error: {e}")

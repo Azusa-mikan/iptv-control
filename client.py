@@ -52,6 +52,10 @@ def main():
         except RuntimeError as e:
             questionary.print(f"error: {e}")
 
+        action = questionary.select("", choices=["continue", "exit"]).ask()
+        if action == "exit":
+            break
+
 
 if __name__ == "__main__":
     main()

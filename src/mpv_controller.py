@@ -66,35 +66,36 @@ class MPVController(threading.Thread):
                     self.mpv_path,
                     f"--input-ipc-server={self.ipc_path}",
                     "--fullscreen",
+                    "--no-terminal",
                     "--hwdec=yes",
                     "--idle=yes",
                     "--ontop",
                     "--on-all-workspaces",
                 ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
             with self._mpv_lock:
                 self.mpv = proc
 
-            start = time.monotonic()
-            if proc.poll() is None:
-                self.running.set()
+            if self._stop_requested.is_set():
+                with self._mpv_lock:
+                    if self.mpv is proc:
+                        self.mpv = None
+                proc.terminate()
+                try:
+                    proc.wait()
+                finally:
+                    self._cleanup_ipc_path()
+                break
 
-            stdout = proc.stdout
-            if stdout is None:
-                raise MpvError("mpv process started but stdout is None")
+            start = time.monotonic()
+            self.running.set()
 
             try:
-                for line in stdout:
-                    logger.info(line.rstrip("\r\n"))
+                proc.wait()
             finally:
-                stdout.close()
-                if proc.poll() is not None:
-                    proc.wait()
                 self.running.clear()
                 self._cleanup_ipc_path()
 
@@ -122,12 +123,15 @@ class MPVController(threading.Thread):
                 break
 
             backoff = min(1.0 * (2 ** (consecutive_failures - 1)), 30.0)
+            self._stop_requested.wait(backoff)
+            if self._stop_requested.is_set():
+                break
+
             logger.warning(
-                "mpv exited unexpectedly (attempt %d/5), restarting in %.0fs",
-                consecutive_failures,
+                "mpv exited, restarting (attempt %d/5, backoff %.0fs)",
+                min(consecutive_failures, 5),
                 backoff,
             )
-            self._stop_requested.wait(backoff)
 
     async def load(self, url: str) -> bool:
         return await asyncio.to_thread(self._load_sync, url)
